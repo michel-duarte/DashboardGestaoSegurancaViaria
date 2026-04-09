@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Observatório Itajaí - Dashboard Mobilidade</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet-vector@4.2.3/dist/esri-leaflet-vector.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: 'Segoe UI', sans-serif; background: #f8f9fa; overflow: hidden; }
+        #header { height: 60px; background: #2c3e50; color: white; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; z-index: 1000; }
+        #map { flex: 1; z-index: 1; background: #ffffff; position: relative; }
+        #dashboard { height: 38%; background: white; border-top: 4px solid #34495e; display: flex; padding: 15px; gap: 15px; box-sizing: border-box; transition: 0.4s; position: relative; }
+        #dashboard.minimized { height: 0px !important; padding: 0; border-top: 0; }
+        #toggle-dashboard { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: #34495e; color: white; border: none; padding: 5px 15px; border-radius: 8px 8px 0 0; cursor: pointer; z-index: 2000; }
+        
+        #global-view, #individual-view { display: flex; width: 100%; gap: 15px; }
+        .panel-left { flex: 0.8; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid #eee; padding-right: 15px; }
+        .panel-right { flex: 1.2; min-width: 0; }
+        .chart-container { flex: 1; position: relative; border: 1px solid #dee2e6; border-radius: 8px; padding: 10px; }
+        
+        .btn-ranking { background: #f1f3f5; color: #2c3e50; border: 1px solid #ced4da; padding: 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 11px; text-align: left; }
+        .btn-ranking.active { background: #e67e22; color: white; border-color: #d35400; font-weight: bold; }
+        
+        .val-destaque { font-size: 24px; font-weight: bold; color: #2c3e50; display: block; margin: 5px 0; }
+        .sub-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
+        #filter-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div><strong>Observatório Itajaí</strong> | Desempenho Mobilidade</div>
+    <input type="date" id="dataSelector" value="2023-01-01">
+</div>
+
+<div id="map">
+    <div id="filter-container">
+        <span>Filtrar Cidade:</span>
+        <select id="sel-metrica"><option value="m">Custo Social (+6m)</option><option value="v">Total Veículos (+6m)</option></select>
+        <input type="range" id="rng-filtro" min="0" value="0" style="flex:1">
+        <span id="val-filtro">0</span>
+    </div>
+</div>
+
+<div id="dashboard">
+    <button id="toggle-dashboard" onclick="toggleDashboard()">▼ DASHBOARD</button>
+    
+    <div id="global-view">
+        <div class="panel-left">
+            <h3 id="tit-global" style="margin:0;">Análise Global</h3>
+            <div style="margin:10px 0">
+                <span class="sub-label">Custo Social Real do Dia:</span>
+                <span id="glob-custo" class="val-destaque">R$ 0,00</span>
+                <span id="glob-diff" style="font-weight:bold; font-size:12px;">Diferença: R$ 0,00</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px;">
+                <button id="btn-reducao" class="btn-ranking" onclick="toggleRanking('reducao')">⬇ Top 5 Reduções</button>
+                <button id="btn-aumento" class="btn-ranking" onclick="toggleRanking('aumento')">⬆ Top 5 Aumentos</button>
+                <button id="btn-motoneta" class="btn-ranking" onclick="toggleRanking('motoneta')">🛵 Top 5 Motonetas</button>
+                <button id="btn-moto" class="btn-ranking" onclick="toggleRanking('moto')">🏍 Top 5 Motocicletas</button>
+            </div>
+        </div>
+        <div class="panel-right"><canvas id="chartGlobal60"></canvas></div>
+    </div>
+
+    <div id="individual-view" style="display:none;">
+        <div class="chart-container"><canvas id="chartEvol"></canvas></div>
+        <div class="chart-container"><canvas id="chartVeic"></canvas></div>
+        <button onclick="voltarGlobal()" style="position:absolute; right:10px; top:10px; cursor:pointer; background:#eee; border:1px solid #ccc; border-radius:4px;">Voltar Global ✖</button>
+    </div>
+</div>
+
+<script src="geometria_h3.js"></script>
+<script src="estatisticas_periodo.js"></script>
+
+<script>
+    const map = L.map('map').setView([-26.9068, -48.6778], 13);
+    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", {
+        portalUrl: "https://arcgis.itajai.sc.gov.br/portal"
+    }).addTo(map);
+
+    let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
+    let dadosAtuais = null;
+
+    function toggleDashboard() {
+        document.getElementById('dashboard').classList.toggle('minimized');
+        setTimeout(() => map.invalidateSize(), 410);
+    }
+
+    function carregarDados(dataStr) {
+        const old = document.getElementById('script-dia'); if (old) old.remove();
+        const script = document.createElement('script');
+        script.id = 'script-dia'; script.src = `dados_diarios/${dataStr}.js`;
+        script.onload = () => {
+            if (typeof dadosDia !== 'undefined') {
+                dadosAtuais = dadosDia;
+                rankingAtivo = null; // Reseta ranking ao trocar data
+                document.querySelectorAll('.btn-ranking').forEach(b => b.classList.remove('active'));
+                ajustarEscalaFiltro();
+                renderizarMapa();
+                atualizarPainelGlobal(dataStr);
+            }
+        };
+        document.head.appendChild(script);
+    }
+
+    function atualizarPainelGlobal(dataStr) {
+        document.getElementById('global-view').style.display = 'flex';
+        document.getElementById('individual-view').style.display = 'none';
+        
+        const meta = dadosAtuais.metadata;
+        document.getElementById('tit-global').innerText = `Análise Global: ${dataStr.split('-').reverse().join('/')}`;
+        document.getElementById('glob-custo').innerText = (meta.custo_dia || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        
+        const diff = document.getElementById('glob-diff');
+        diff.innerText = "Diferença Proj. (+6m): " + (meta.diff_global || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        diff.style.color = meta.diff_global < 0 ? '#27ae60' : '#e74c3c';
+        
+        // Gráfico do Custo Social (Histórico de 120 dias)
+        const hist = estatisticasPeriodo.custos_diarios || {};
+        const datas = Object.keys(hist).sort();
+        const idx = datas.indexOf(dataStr);
+        const slice = datas.slice(Math.max(0, idx - 60), Math.min(datas.length, idx + 60));
+        
+        if(chartGlobal) chartGlobal.destroy();
+        chartGlobal = new Chart(document.getElementById('chartGlobal60'), {
+            type: 'bar',
+            data: {
+                labels: slice.map(d => d.split('-')[2]),
+                datasets: [{ 
+                    label: 'Custo Social do Dia (R$)', 
+                    data: slice.map(d => hist[d] || 0),
+                    backgroundColor: slice.map(d => d === dataStr ? '#e67e22' : '#bdc3c7') 
+                }]
+            },
+            options: { 
+                maintainAspectRatio: false,
+                plugins: { 
+                    title: { display: true, text: 'Evolução dos Custos (60 dias antes/depois do selecionado)' },
+                    legend: { display: false }
+                },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    function toggleRanking(tipo) {
+        const btn = document.getElementById('btn-' + tipo);
+        if (rankingAtivo === tipo) {
+            // Se já está ativo, desliga
+            rankingAtivo = null;
+            btn.classList.remove('active');
+            renderizarMapa();
+        } else {
+            // Desliga outros e ativa este
+            document.querySelectorAll('.btn-ranking').forEach(b => b.classList.remove('active'));
+            rankingAtivo = tipo;
+            btn.classList.add('active');
+            processarRanking(tipo);
+        }
+    }
+
+    function processarRanking(tipo) {
+        const lista = [];
+        const hexas = dadosAtuais.data;
+        Object.keys(hexas).forEach(id => {
+            const d = hexas[id];
+            let score = 0;
+            if (tipo === 'reducao') score = d.m["6a"] - d.m["6d"];
+            else if (tipo === 'aumento') score = d.m["6d"] - d.m["6a"];
+            else if (tipo === 'motoneta') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTONETA') ? a + v : a, 0);
+            else if (tipo === 'moto') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTOCICLETA') ? a + v : a, 0);
+            
+            if (score > 0 || tipo.includes('reducao')) lista.push({id, score});
+        });
+        lista.sort((a, b) => b.score - a.score);
+        renderizarMapa(lista.slice(0, 5).map(x => x.id));
+    }
+
+    function renderizarMapa(idsFiltro = null) {
+        if (!geoLayer) geoLayer = L.featureGroup().addTo(map);
+        geoLayer.clearLayers();
+        const metrica = document.getElementById('sel-metrica').value;
+        const minVal = parseFloat(document.getElementById('rng-filtro').value);
+        
+        Object.keys(dadosAtuais.data).forEach(id => {
+            if (!geometriaH3[id]) return;
+            // Se houver filtro de ranking, ignora hexágonos fora dele
+            if (idsFiltro && !idsFiltro.includes(id)) return;
+            
+            const d = dadosAtuais.data[id];
+            let valComp = metrica === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
+            
+            // Filtro de range (só aplica se não for ranking)
+            if (!idsFiltro && valComp < minVal) return;
+
+            const diff = d.m["6d"] - d.m["6a"];
+            const cor = diff > 1000 ? '#e74c3c' : (diff < -1000 ? '#2ecc71' : '#f1c40f');
+            
+            L.polygon(geometriaH3[id], {
+                color: idsFiltro ? '#000' : '#333', 
+                fillColor: cor, 
+                fillOpacity: 0.7, 
+                weight: idsFiltro ? 4 : 1
+            }).addTo(geoLayer).on('click', () => exibirIndividual(d, id));
+        });
+    }
+
+    function exibirIndividual(info, id) {
+        document.getElementById('global-view').style.display = 'none';
+        document.getElementById('individual-view').style.display = 'flex';
+        
+        if(evolChart) evolChart.destroy();
+        evolChart = new Chart(document.getElementById('chartEvol'), {
+            type: 'line',
+            data: { labels: ['-6m', '-3m', '+3m', '+6m'], datasets: [{ label: 'Custo R$', data: [info.m["6a"], info.m["3a"], info.m["3d"], info.m["6d"]], borderColor: '#2c3e50', fill: true }] },
+            options: { maintainAspectRatio: false }
+        });
+
+        const tipos = [...new Set([...Object.keys(info.va), ...Object.keys(info.vd)])];
+        if(veicChart) veicChart.destroy();
+        veicChart = new Chart(document.getElementById('chartVeic'), {
+            type: 'bar',
+            data: { labels: tipos, datasets: [{ label: 'Antes', data: tipos.map(t => info.va[t] || 0), backgroundColor: '#bdc3c7' }, { label: 'Depois', data: tipos.map(t => info.vd[t] || 0), backgroundColor: '#3498db' }] },
+            options: { maintainAspectRatio: false }
+        });
+    }
+
+    function voltarGlobal() {
+        rankingAtivo = null;
+        document.querySelectorAll('.btn-ranking').forEach(b => b.classList.remove('active'));
+        renderizarMapa(); 
+        atualizarPainelGlobal(document.getElementById('dataSelector').value); 
+    }
+
+    function ajustarEscalaFiltro() {
+        let max = 0; const m = document.getElementById('sel-metrica').value;
+        Object.values(dadosAtuais.data).forEach(d => {
+            let v = m === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
+            if (v > max) max = v;
+        });
+        document.getElementById('rng-filtro').max = max;
+    }
+
+    document.getElementById('rng-filtro').oninput = (e) => {
+        document.getElementById('val-filtro').innerText = Math.round(e.target.value).toLocaleString();
+        renderizarMapa();
+    };
+    
+    document.getElementById('dataSelector').onchange = (e) => carregarDados(e.target.value);
+    window.onload = () => carregarDados("2023-01-01");
+</script>
+</body>
+</html>
