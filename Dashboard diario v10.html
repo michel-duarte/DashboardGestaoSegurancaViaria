@@ -201,7 +201,7 @@ function atualizarTermometro(valor, dataAtiva) {
         const hist = estatisticasPeriodo.custos_diarios || {};
         const todasDatas = Object.keys(hist).sort();
         const idx = todasDatas.indexOf(dataStr);
-        const sliceDatas = todasDatas.slice(Math.max(0, idx - 60), Math.min(todasDatas.length, idx + 60));
+        const sliceDatas = todasDatas.slice(Math.max(0, idx - 30), Math.min(todasDatas.length, idx + 30));
         
         if(chartGlobal) chartGlobal.destroy();
         const ctx = document.getElementById('chartGlobal60').getContext('2d');
