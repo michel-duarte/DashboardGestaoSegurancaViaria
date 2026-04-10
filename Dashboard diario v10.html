@@ -93,7 +93,9 @@
 <script>
     const map = L.map('map').setView([-26.9068, -48.6778], 13);
     L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", {
-    portalUrl: "https://arcgis.itajai.sc.gov.br/portal", // Use portalUrl como na v6
+    // Exemplo conceitual (pode exigir ajustes no plugin esri-leaflet-vector)
+    //portalUrl: "https://cors-anywhere.herokuapp.com/https://arcgis.itajai.sc.gov.br/portal",
+    portalUrl: "https://arcgis.itajai.sc.gov.br/portal",
     attribution: 'Prefeitura de Itajaí'}).addTo(map);
 
     const infoControl = L.control({position: 'bottomright'});
