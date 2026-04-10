@@ -88,7 +88,7 @@ if __name__ == '__main__':
     with open(os.path.join(PASTA_PROJETO, 'geometria_h3.js'), 'w', encoding='utf-8') as f:
         f.write(f"var geometriaH3 = {json.dumps(geometria)};")
 
-    datas_alvo = pd.date_range(start='2023-01-01', end='2023-06-30')
+    datas_alvo = pd.date_range(start='2020-01-01', end='2023-06-30')
     col_veiculo = next((c for c in df.columns if 'veiculo' in c.lower()), 'des_tipo_veiculo')
     
     num_cores = multiprocessing.cpu_count()
