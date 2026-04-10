@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Observatório Itajaí - Dashboard Mobilidade</title>
+    <title> Dashboard de Gestão da Segurançs Viária - Números / Custo Social</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
@@ -32,7 +32,7 @@
 <body>
 
 <div id="header">
-    <div><strong>Dasshboard de Gestão da Segurançs Viária</strong> | Números / Custo Social</div>
+    <div><strong>Dashboard de Gestão da Segurançs Viária</strong> | Números / Custo Social</div>
     <input type="date" id="dataSelector" value="2023-01-01">
 </div>
 
@@ -205,11 +205,11 @@
         const lista = [];
         const hexas = dadosAtuais.data;
         Object.keys(hexas).forEach(id => {
+            else if (tipo === 'motoneta') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTONETA') ? a + v : a, 0);
             const d = hexas[id];
             let score = 0;
             if (tipo === 'reducao') score = d.m["6a"] - d.m["6d"];
             else if (tipo === 'aumento') score = d.m["6d"] - d.m["6a"];
-            else if (tipo === 'motoneta') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTONETA') ? a + v : a, 0);
             else if (tipo === 'moto') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTOCICLETA') ? a + v : a, 0);
             if (score > 0 || tipo.includes('reducao')) lista.push({id, score});
         });
