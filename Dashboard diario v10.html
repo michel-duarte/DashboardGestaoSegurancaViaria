@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard de Gestão da Segurançs Viária - Números / Custo Social</title>
+    <title>Observatório Itajaí - Dashboard Mobilidade</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
@@ -27,12 +27,28 @@
         .val-destaque { font-size: 24px; font-weight: bold; color: #2c3e50; display: block; margin: 5px 0; }
         .sub-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
         #filter-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px; }
+
+        /* ESTILOS DO TERMÔMETRO (IMPORTADOS DA V6) */
+        .info-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); border: 1px solid #ccc; width: 240px; }
+        .selected-value-display { text-align: center; background: #ecf0f1; padding: 8px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #27ae60; }
+        #txt-hoje { font-size: 18px; color: #27ae60; font-weight: bold; display: block; }
+        #txt-perc { font-size: 12px; color: #7f8c8d; display: block; margin-top: 2px; }
+        .therm-container { display: flex; align-items: flex-start; position: relative; height: 160px; }
+        .therm-wrapper { height: 150px; width: 22px; background: #eee; border-radius: 15px; position: relative; border: 2px solid #bdc3c7; margin-left: 5px; }
+        .therm-bar { width: 100%; background: linear-gradient(to top, #2ecc71, #27ae60); position: absolute; bottom: 0; border-radius: 10px; transition: height 0.5s ease; }
+        #marker-today { position: absolute; left: 28px; width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 12px solid #2c3e50; transition: bottom 0.5s ease; margin-bottom: -8px; z-index: 10; }
+        .labels-column { position: relative; height: 150px; margin-left: 25px; flex: 1; }
+        .record-label { position: absolute; font-size: 11px; width: 100%; color: #333; }
+        .label-max { top: -5px; border-top: 1px dashed #bdc3c7; padding-top: 2px; }
+        .label-min { bottom: -5px; border-bottom: 1px dashed #bdc3c7; padding-bottom: 2px; }
+        .legend-box { clear: both; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; margin-top: 10px; }
+        .legend-box i { width: 10px; height: 10px; float: left; margin-right: 8px; border-radius: 50%; margin-top: 3px; }
     </style>
 </head>
 <body>
 
 <div id="header">
-    <div><strong>Dashboard de Gestão da Segurançs Viária</strong> | Números / Custo Social</div>
+    <div><strong>Dashboard de Gestão da Segurança Viária</strong> | Números / Custo Social</div>
     <input type="date" id="dataSelector" value="2023-01-01">
 </div>
 
@@ -76,7 +92,34 @@
 
 <script>
     const map = L.map('map').setView([-26.9068, -48.6778], 13);
-    Url    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { portal: "https://arcgis.itajai.sc.gov.br/portal" }).addTo(map);
+    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { portal: "https://arcgis.itajai.sc.gov.br/portal" }).addTo(map);
+
+    // ADIÇÃO DO PAINEL TERMÔMETRO AO MAPA (Leaflet Control)
+    const infoControl = L.control({position: 'bottomright'});
+    infoControl.onAdd = function() {
+        const div = L.DomUtil.create('div', 'info-panel');
+        div.innerHTML = `
+            <div class="selected-value-display">
+                <span class="sub-label">Data Selecionada: <span id="lbl-data-ativa">--/--/--</span></span>
+                <span id="txt-hoje">0 verdes</span>
+                <span id="txt-perc">(0% do total)</span>
+            </div>
+            <div class="therm-container">
+                <div class="therm-wrapper">
+                    <div id="thermo-bar" class="therm-bar" style="height: 0%"></div>
+                </div>
+                <div id="marker-today" style="bottom: 0%"></div>
+                <div class="labels-column">
+                    <div class="record-label label-max"><b>Máximo</b><br><span id="txt-max">0</span></div>
+                    <div class="record-label label-min"><b>Mínimo</b><br><span id="txt-min">0</span></div>
+                </div>
+            </div>
+            <div class="legend-box">
+                <i style="background:#e74c3c"></i> Aumento | <i style="background:#f1c40f"></i> Estável | <i style="background:#2ecc71"></i> Redução
+            </div>`;
+        return div;
+    };
+    infoControl.addTo(map);
 
     let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
     let hexClicadoId = null;
@@ -88,9 +131,7 @@
     }
 
     function carregarDados(dataStr) {
-        // Atualiza o seletor de data para refletir a mudança (caso venha do clique no gráfico)
         document.getElementById('dataSelector').value = dataStr;
-        
         const old = document.getElementById('script-dia'); if (old) old.remove();
         const script = document.createElement('script');
         script.id = 'script-dia'; script.src = `dados_diarios/${dataStr}.js`;
@@ -100,9 +141,34 @@
                 voltarGlobal(); 
                 ajustarEscalaFiltro();
                 atualizarPainelGlobal(dataStr);
+                // ATUALIZA O TERMÔMETRO AO CARREGAR OS DADOS
+                atualizarTermometro(estatisticasPeriodo.historico[dataStr] || 0, dataStr);
+                renderizarMapa();
             }
         };
         document.head.appendChild(script);
+    }
+
+    // FUNÇÃO DE ATUALIZAÇÃO DO TERMÔMETRO (IMPORTADA DA V6)
+    function atualizarTermometro(valor, dataAtiva) {
+        const ep = estatisticasPeriodo;
+        const totalHexagonosCidade = Object.keys(dadosAtuais.data).length;
+        const fmtData = (s) => {
+            if (!s) return "";
+            const p = s.split('-');
+            return `${p[2]}/${p[1]}/${p[0].slice(-2)}`;
+        };
+        document.getElementById('lbl-data-ativa').innerText = fmtData(dataAtiva);
+        const percSobreTotal = totalHexagonosCidade > 0 ? ((valor / totalHexagonosCidade) * 100).toFixed(1) : 0;
+        document.getElementById('txt-perc').innerText = `(${percSobreTotal}% de ${totalHexagonosCidade} hexágonos)`;
+        
+        let pct = ((valor - ep.minVerdes) / (ep.maxVerdes - ep.minVerdes)) * 100;
+        pct = Math.max(0, Math.min(isNaN(pct) ? 0 : pct, 100));
+        document.getElementById('thermo-bar').style.height = pct + '%';
+        document.getElementById('marker-today').style.bottom = pct + '%';
+        document.getElementById('txt-hoje').innerText = valor + " verdes";
+        document.getElementById('txt-max').innerHTML = `${ep.maxVerdes} <small>(${fmtData(ep.dataMax)})</small>`;
+        document.getElementById('txt-min').innerHTML = `${ep.minVerdes} <small>(${fmtData(ep.dataMin)})</small>`;
     }
 
     function atualizarPainelGlobal(dataStr) {
@@ -123,7 +189,7 @@
         chartGlobal = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: sliceDatas.map(d => d.split('-')[2]), // Apenas o dia no label
+                labels: sliceDatas.map(d => d.split('-')[2]),
                 datasets: [{ 
                     label: 'Custo R$', 
                     data: sliceDatas.map(d => hist[d] || 0),
@@ -139,16 +205,12 @@
                 },
                 onClick: (event, elements) => {
                     if (elements.length > 0) {
-                        const index = elements[0].index;
-                        const dataSelecionada = sliceDatas[index];
-                        carregarDados(dataSelecionada);
+                        carregarDados(sliceDatas[elements[0].index]);
                     }
                 }
             }
         });
     }
-
-    // --- LOGICA DE RANKING E MAPA. ---
 
     function toggleRanking(tipo) {
         const btn = document.getElementById('btn-' + tipo);
@@ -230,7 +292,7 @@
         hexClicadoId = null;
         document.getElementById('global-view').style.display = 'flex';
         document.getElementById('individual-view').style.display = 'none';
-        renderizarMapa(rankingAtivo ? null : null); // Simples reset
+        renderizarMapa(rankingAtivo ? null : null);
     }
 
     function ajustarEscalaFiltro() {
