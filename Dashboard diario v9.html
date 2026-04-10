@@ -75,30 +75,45 @@
 <script src="estatisticas_periodo.js"></script>
 
 <script>
-    // --- CORREÇÃO PARA O CHROME (CORS / PRIVATE NETWORK) ---
-    // Força o Leaflet-Esri a não enviar credenciais que disparam o bloqueio de rede privada
-    L.esri.Config.preflight = false; 
+    // 1. Configuração de Segurança para o Chrome
+    try {
+        L.esri.Config.preflight = false;
+    } catch(e) {
+        console.warn("Erro ao configurar Esri Config:", e);
+    }
 
     const map = L.map('map').setView([-26.9068, -48.6778], 13);
 
-    // Adicionando o VectorTile com tratamento de erro
-    const vtLayer = L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { 
-        portal: "https://arcgis.itajai.sc.gov.br/portal" 
-    }).addTo(map);
+    // 2. Carregamento do Mapa Base com Tratamento de Erro
+    // Se o servidor da prefeitura bloquear, o restante do código não trava.
+    try {
+        const vtLayer = L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { 
+            portal: "https://arcgis.itajai.sc.gov.br/portal" 
+        }).addTo(map);
 
-    // Listener para avisar se o mapa da prefeitura falhar no Chrome
-    vtLayer.on('load', function() { console.log("Mapa Esri carregado com sucesso."); });
-    
-    // --- RESTANTE DA LÓGICA DO DASHBOARD ---
+        vtLayer.on('error', function(e) {
+            console.error("O mapa da prefeitura foi bloqueado pelo navegador (CORS/Private Network).");
+            // Adiciona um mapa base alternativo caso o da prefeitura falhe
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+        });
+    } catch (err) {
+        console.error("Falha catastrófica ao carregar camada vetorial:", err);
+    }
+
+    // --- VARIÁVEIS GLOBAIS ---
     let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
     let hexClicadoId = null;
     let dadosAtuais = null;
 
+    // 3. Funções de Interface
     function toggleDashboard() {
         document.getElementById('dashboard').classList.toggle('minimized');
         setTimeout(() => map.invalidateSize(), 410);
     }
 
+    // 4. Carregamento de Dados (H3 e Estatísticas)
     function carregarDados(dataStr) {
         document.getElementById('dataSelector').value = dataStr;
         
@@ -106,21 +121,32 @@
         const script = document.createElement('script');
         script.id = 'script-dia'; 
         script.src = `dados_diarios/${dataStr}.js`;
+        
         script.onload = () => {
             if (typeof dadosDia !== 'undefined') {
                 dadosAtuais = dadosDia;
                 voltarGlobal(); 
                 ajustarEscalaFiltro();
                 atualizarPainelGlobal(dataStr);
+                renderizarMapa(); // Garante que o mapa H3 carregue
             }
         };
+
+        script.onerror = () => {
+            console.error(`Erro ao carregar o arquivo de dados: dados_diarios/${dataStr}.js`);
+            alert("Erro ao carregar os dados deste dia. Verifique se o arquivo existe na pasta.");
+        };
+
         document.head.appendChild(script);
     }
 
+    // 5. Atualização dos Gráficos e Painel
     function atualizarPainelGlobal(dataStr) {
+        if (!dadosAtuais) return;
         const meta = dadosAtuais.metadata;
         document.getElementById('tit-global').innerText = `Análise Global: ${dataStr.split('-').reverse().join('/')}`;
         document.getElementById('glob-custo').innerText = (meta.custo_dia || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        
         const diff = document.getElementById('glob-diff');
         diff.innerText = "Diferença Proj: " + (meta.diff_global || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
         diff.style.color = meta.diff_global < 0 ? '#27ae60' : '#e74c3c';
@@ -160,6 +186,7 @@
         });
     }
 
+    // --- FUNÇÕES DE RANKING E RENDERIZAÇÃO ---
     function toggleRanking(tipo) {
         const btn = document.getElementById('btn-' + tipo);
         if (rankingAtivo === tipo) {
@@ -193,6 +220,8 @@
     function renderizarMapa(idsFiltro = null) {
         if (!geoLayer) geoLayer = L.featureGroup().addTo(map);
         geoLayer.clearLayers();
+        if (!dadosAtuais) return;
+
         const m = document.getElementById('sel-metrica').value;
         const f = parseFloat(document.getElementById('rng-filtro').value);
         
@@ -244,6 +273,7 @@
     }
 
     function ajustarEscalaFiltro() {
+        if (!dadosAtuais) return;
         let max = 0; const m = document.getElementById('sel-metrica').value;
         Object.values(dadosAtuais.data).forEach(d => {
             let v = m === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
@@ -252,11 +282,14 @@
         document.getElementById('rng-filtro').max = max;
     }
 
+    // --- EVENTOS ---
     document.getElementById('rng-filtro').oninput = (e) => {
         document.getElementById('val-filtro').innerText = Math.round(e.target.value).toLocaleString();
         renderizarMapa();
     };
     document.getElementById('dataSelector').onchange = (e) => carregarDados(e.target.value);
+    
+    // Inicialização
     window.onload = () => carregarDados("2023-01-01");
 </script>
 </body>
