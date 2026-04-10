@@ -32,7 +32,7 @@
 <body>
 
 <div id="header">
-    <div><strong>Observatório Itajaí</strong> | Desempenho Mobilidade</div>
+    <div><strong>Dasshboard de Gestão da Segurançs Viária</strong> | Números / Custo Social</div>
     <input type="date" id="dataSelector" value="2023-01-01">
 </div>
 
@@ -51,9 +51,9 @@
         <div class="panel-left">
             <h3 id="tit-global" style="margin:0;">Análise Global</h3>
             <div style="margin:10px 0">
-                <span class="sub-label">Custo do Dia (Cidade):</span>
+                <span class="sub-label">Custo Social do Dia (Cidade):</span>
                 <span id="glob-custo" class="val-destaque">R$ 0,00</span>
-                <span id="glob-diff" style="font-weight:bold; font-size:12px;">Diferença Proj: R$ 0,00</span>
+                <span id="glob-diff" style="font-weight:bold; font-size:12px;">Diferença 6 meses: R$ 0,00</span>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px;">
                 <button id="btn-reducao" class="btn-ranking" onclick="toggleRanking('reducao')">⬇ Top 5 Reduções</button>
@@ -76,7 +76,7 @@
 
 <script>
     const map = L.map('map').setView([-26.9068, -48.6778], 13);
-    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { portalUrl: "https://arcgis.itajai.sc.gov.br/portal" }).addTo(map);
+Url    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { portal: "https://arcgis.itajai.sc.gov.br/portal" }).addTo(map);
 
     let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
     let hexClicadoId = null;
@@ -148,7 +148,7 @@
         });
     }
 
-    // --- LOGICA DE RANKING E MAPA (Mantidas conforme solicitado) ---
+    // --- LOGICA DE RANKING E MAPA. ---
 
     function toggleRanking(tipo) {
         const btn = document.getElementById('btn-' + tipo);
