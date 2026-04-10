@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Observatório Itajaí - Dashboard Mobilidade</title>
+    <title>Dashboard de Gestão da Segurança Viária</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
@@ -28,7 +28,7 @@
         .sub-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
         #filter-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px; }
 
-        /* ESTILOS DO TERMÔMETRO (IMPORTADOS DA V6) */
+        /* ESTILOS DO TERMÔMETRO */
         .info-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); border: 1px solid #ccc; width: 240px; }
         .selected-value-display { text-align: center; background: #ecf0f1; padding: 8px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #27ae60; }
         #txt-hoje { font-size: 18px; color: #27ae60; font-weight: bold; display: block; }
@@ -49,7 +49,7 @@
 
 <div id="header">
     <div><strong>Dashboard de Gestão da Segurança Viária</strong> | Números / Custo Social</div>
-    <input type="date" id="dataSelector" value="2023-01-01">
+    <input type="date" id="dataSelector" value="2023-06-01">
 </div>
 
 <div id="map">
@@ -94,7 +94,6 @@
     const map = L.map('map').setView([-26.9068, -48.6778], 13);
     L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", { portal: "https://arcgis.itajai.sc.gov.br/portal" }).addTo(map);
 
-    // ADIÇÃO DO PAINEL TERMÔMETRO AO MAPA (Leaflet Control)
     const infoControl = L.control({position: 'bottomright'});
     infoControl.onAdd = function() {
         const div = L.DomUtil.create('div', 'info-panel');
@@ -105,18 +104,14 @@
                 <span id="txt-perc">(0% do total)</span>
             </div>
             <div class="therm-container">
-                <div class="therm-wrapper">
-                    <div id="thermo-bar" class="therm-bar" style="height: 0%"></div>
-                </div>
+                <div class="therm-wrapper"><div id="thermo-bar" class="therm-bar" style="height: 0%"></div></div>
                 <div id="marker-today" style="bottom: 0%"></div>
                 <div class="labels-column">
                     <div class="record-label label-max"><b>Máximo</b><br><span id="txt-max">0</span></div>
                     <div class="record-label label-min"><b>Mínimo</b><br><span id="txt-min">0</span></div>
                 </div>
             </div>
-            <div class="legend-box">
-                <i style="background:#e74c3c"></i> Aumento | <i style="background:#f1c40f"></i> Estável | <i style="background:#2ecc71"></i> Redução
-            </div>`;
+            <div class="legend-box"><i style="background:#e74c3c"></i> Aumento | <i style="background:#f1c40f"></i> Estável | <i style="background:#2ecc71"></i> Redução</div>`;
         return div;
     };
     infoControl.addTo(map);
@@ -134,41 +129,63 @@
         document.getElementById('dataSelector').value = dataStr;
         const old = document.getElementById('script-dia'); if (old) old.remove();
         const script = document.createElement('script');
-        script.id = 'script-dia'; script.src = `dados_diarios/${dataStr}.js`;
+        script.id = 'script-dia'; 
+        script.src = `dados_diarios/${dataStr}.js`;
         script.onload = () => {
             if (typeof dadosDia !== 'undefined') {
                 dadosAtuais = dadosDia;
                 voltarGlobal(); 
                 ajustarEscalaFiltro();
                 atualizarPainelGlobal(dataStr);
-                // ATUALIZA O TERMÔMETRO AO CARREGAR OS DADOS
-                atualizarTermometro(estatisticasPeriodo.historico[dataStr] || 0, dataStr);
+                
+                const valorVerdes = (estatisticasPeriodo.historico && estatisticasPeriodo.historico[dataStr]) ? estatisticasPeriodo.historico[dataStr] : 0;
+                atualizarTermometro(valorVerdes, dataStr);
+                
                 renderizarMapa();
             }
         };
         document.head.appendChild(script);
     }
 
-    // FUNÇÃO DE ATUALIZAÇÃO DO TERMÔMETRO (IMPORTADA DA V6)
-    function atualizarTermometro(valor, dataAtiva) {
+function atualizarTermometro(valor, dataAtiva) {
         const ep = estatisticasPeriodo;
-        const totalHexagonosCidade = Object.keys(dadosAtuais.data).length;
+        if (!ep || !ep.historico) return;
+
         const fmtData = (s) => {
             if (!s) return "";
             const p = s.split('-');
-            return `${p[2]}/${p[1]}/${p[0].slice(-2)}`;
+            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(-2)}` : s;
         };
+
+        // Filtra o histórico para começar apenas em 01/03/2020
+        const dataCorte = "2020-06-01";
+        const chavesFiltradas = Object.keys(ep.historico).filter(d => d >= dataCorte);
+        const valoresFiltrados = chavesFiltradas.map(d => ep.historico[d]);
+
+        // CÁLCULO DINÂMICO DOS RECORDES NO PERÍODO VÁLIDO
+        const maxVal = valoresFiltrados.length > 0 ? Math.max(...valoresFiltrados) : 0;
+        const minVal = valoresFiltrados.length > 0 ? Math.min(...valoresFiltrados) : 0;
+        const dataMax = chavesFiltradas[valoresFiltrados.indexOf(maxVal)];
+        const dataMin = chavesFiltradas[valoresFiltrados.indexOf(minVal)];
+
         document.getElementById('lbl-data-ativa').innerText = fmtData(dataAtiva);
-        const percSobreTotal = totalHexagonosCidade > 0 ? ((valor / totalHexagonosCidade) * 100).toFixed(1) : 0;
-        document.getElementById('txt-perc').innerText = `(${percSobreTotal}% de ${totalHexagonosCidade} hexágonos)`;
         
-        let pct = ((valor - ep.minVerdes) / (ep.maxVerdes - ep.minVerdes)) * 100;
-        pct = Math.max(0, Math.min(isNaN(pct) ? 0 : pct, 100));
+        const totalHex = dadosAtuais ? Object.keys(dadosAtuais.data).length : 0;
+        const percTotal = totalHex > 0 ? ((valor / totalHex) * 100).toFixed(1) : 0;
+        document.getElementById('txt-perc').innerText = `(${percTotal}% de ${totalHex} hexágonos)`;
+        document.getElementById('txt-hoje').innerText = valor + " verdes";
+
+        // Cálculo da altura da barra com base no novo range
+        const range = maxVal - minVal;
+        let pct = range > 0 ? ((valor - minVal) / range) * 100 : 0;
+        pct = Math.max(0, Math.min(pct, 100));
+
         document.getElementById('thermo-bar').style.height = pct + '%';
         document.getElementById('marker-today').style.bottom = pct + '%';
-        document.getElementById('txt-hoje').innerText = valor + " verdes";
-        document.getElementById('txt-max').innerHTML = `${ep.maxVerdes} <small>(${fmtData(ep.dataMax)})</small>`;
-        document.getElementById('txt-min').innerHTML = `${ep.minVerdes} <small>(${fmtData(ep.dataMin)})</small>`;
+
+        // Exibe os recordes encontrados após 01/03/2020
+        document.getElementById('txt-max').innerHTML = `${maxVal} <small>(${fmtData(dataMax)})</small>`;
+        document.getElementById('txt-min').innerHTML = `${minVal} <small>(${fmtData(dataMin)})</small>`;
     }
 
     function atualizarPainelGlobal(dataStr) {
@@ -199,14 +216,9 @@
             },
             options: { 
                 maintainAspectRatio: false, 
-                plugins: { 
-                    title: { display: true, text: 'Histórico de Custos (Clique na barra para mudar o dia)' },
-                    legend: { display: false }
-                },
+                plugins: { legend: { display: false } },
                 onClick: (event, elements) => {
-                    if (elements.length > 0) {
-                        carregarDados(sliceDatas[elements[0].index]);
-                    }
+                    if (elements.length > 0) carregarDados(sliceDatas[elements[0].index]);
                 }
             }
         });
@@ -247,17 +259,14 @@
         geoLayer.clearLayers();
         const m = document.getElementById('sel-metrica').value;
         const f = parseFloat(document.getElementById('rng-filtro').value);
-        
         Object.keys(dadosAtuais.data).forEach(id => {
             if (!geometriaH3[id]) return;
             if (idsFiltro && !idsFiltro.includes(id)) return;
             const d = dadosAtuais.data[id];
             let val = m === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
             if (!idsFiltro && val < f) return;
-
             const diff = d.m["6d"] - d.m["6a"];
             const cor = diff > 1000 ? '#e74c3c' : (diff < -1000 ? '#2ecc71' : '#f1c40f');
-            
             L.polygon(geometriaH3[id], {
                 color: (id === hexClicadoId) ? '#000' : '#333',
                 fillColor: cor, 
@@ -292,7 +301,7 @@
         hexClicadoId = null;
         document.getElementById('global-view').style.display = 'flex';
         document.getElementById('individual-view').style.display = 'none';
-        renderizarMapa(rankingAtivo ? null : null);
+        renderizarMapa(); 
     }
 
     function ajustarEscalaFiltro() {
