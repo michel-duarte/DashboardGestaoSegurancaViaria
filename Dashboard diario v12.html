@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard de Gestão da Segurança Viária | Números / Custo Social</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet-vector@4.2.3/dist/esri-leaflet-vector.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: 'Segoe UI', sans-serif; background: #f8f9fa; overflow: hidden; }
+        #header { height: 60px; background: #2c3e50; color: white; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; z-index: 1000; }
+        #map { flex: 1; z-index: 1; background: #ffffff; position: relative; }
+        #dashboard { height: 32%; background: white; border-top: 4px solid #34495e; display: flex; padding: 15px; gap: 15px; box-sizing: border-box; transition: 0.4s; position: relative; }
+        #dashboard.minimized { height: 0px !important; padding: 0; border-top: 0; }
+        #toggle-dashboard { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: #34495e; color: white; border: none; padding: 5px 15px; border-radius: 8px 8px 0 0; cursor: pointer; z-index: 2000; }
+        
+        #global-view, #individual-view { display: flex; width: 100%; gap: 15px; }
+        .panel-left { flex: 0.8; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid #eee; padding-right: 15px; }
+        .panel-right { flex: 1.2; min-width: 0; }
+        .chart-container { flex: 1; position: relative; border: 1px solid #dee2e6; border-radius: 8px; padding: 10px; height: 100%; min-width: 0;}
+        
+        .btn-ranking { background: #f1f3f5; color: #2c3e50; border: 1px solid #ced4da; padding: 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 11px; text-align: left; transition: 0.2s; }
+        .btn-ranking.active { background: #e67e22; color: white; border-color: #d35400; font-weight: bold; }
+        
+        .val-destaque { font-size: 24px; font-weight: bold; color: #2c3e50; display: block; margin: 5px 0; }
+        .sub-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
+        
+        /* TERMÔMETRO DE PROJEÇÃO */
+        .info-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); border: 1px solid #ccc; width: 260px; }
+        .selected-value-display { text-align: center; background: #f8f9fa; padding: 8px; border-radius: 5px; margin-bottom: 10px; border-left: 5px solid #27ae60; }
+        #txt-hoje { font-size: 18px; font-weight: bold; display: block; }
+        
+        .therm-container { display: flex; align-items: flex-start; position: relative; height: 180px; margin-top: 5px; }
+        .therm-wrapper { height: 150px; width: 22px; background: #eee; border-radius: 11px; position: relative; border: 2px solid #bdc3c7; overflow: hidden; }
+        .therm-bar { width: 100%; background: linear-gradient(to top, #2ecc71 0%, #f1c40f 50%, #e74c3c 100%); position: absolute; bottom: 0; transition: height 0.5s ease; }
+        
+        #marker-today { 
+            position: absolute; 
+            left: 28px; 
+            width: 0; height: 0; 
+            border-top: 8px solid transparent; 
+            border-bottom: 8px solid transparent; 
+            border-right: 12px solid #2c3e50; 
+            transition: bottom 0.5s ease; 
+            margin-bottom: -8px; 
+            z-index: 100; 
+        }
+
+        .labels-column { position: relative; height: 150px; margin-left: 35px; flex: 1; }
+        .record-label { position: absolute; font-size: 10px; width: 100%; color: #333; line-height: 1.1; }
+        .label-max { top: -5px; border-top: 1px dashed #e74c3c; padding-top: 3px; }
+        .label-min { bottom: -5px; border-bottom: 1px dashed #27ae60; padding-bottom: 3px; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div><strong>Dashboard de Gestão da Segurança Viária</strong> | Custo Social</div>
+    <input type="date" id="dataSelector" value="2023-06-01">
+</div>
+
+<div id="map">
+    <div id="filter-container" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px;">
+        <select id="sel-metrica"><option value="m">Custo Social (+6m)</option></select>
+        <input type="range" id="rng-filtro" min="0" value="0" style="width:150px">
+        <span id="val-filtro">0</span>
+    </div>
+</div>
+
+<div id="dashboard">
+    <button id="toggle-dashboard" onclick="toggleDashboard()">▼ DASHBOARD</button>
+    <div id="global-view">
+        <div class="panel-left">
+            <h3 id="tit-global" style="margin:0;">Análise Global</h3>
+            <div style="margin:10px 0">
+                <span class="sub-label">Custo Social do Dia:</span>
+                <span id="glob-custo" class="val-destaque">R$ 0,00</span>
+                <span id="glob-diff" style="font-weight:bold; font-size:12px;">--</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px;">
+                <button id="btn-reducao" class="btn-ranking" onclick="toggleRanking('reducao')">⬇ Top 5 Reduções</button>
+                <button id="btn-aumento" class="btn-ranking" onclick="toggleRanking('aumento')">⬆ Top 5 Aumentos</button>
+                <button id="btn-motoneta" class="btn-ranking" onclick="toggleRanking('motoneta')">🛵 Top 5 Motonetas</button>
+                <button id="btn-moto" class="btn-ranking" onclick="toggleRanking('moto')">🏍 Top 5 Motocicletas</button>
+            </div>
+        </div>
+        <div class="panel-right"><canvas id="chartGlobal60"></canvas></div>
+    </div>
+    <div id="individual-view" style="display:none;">
+        <div class="chart-container"><canvas id="chartEvol"></canvas></div>
+        <div class="chart-container"><canvas id="chartVeic"></canvas></div>
+        <button onclick="voltarGlobal()" style="position:absolute; right:10px; top:10px; cursor:pointer;">Voltar ✖</button>
+    </div>
+</div>
+
+<script src="geometria_h3.js"></script>
+<script src="estatisticas_periodo.js"></script>
+
+<script>
+    const map = L.map('map').setView([-26.9068, -48.6778], 13);
+    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", {
+        portalUrl: "https://arcgis.itajai.sc.gov.br/portal"
+    }).addTo(map);
+
+    const infoControl = L.control({position: 'bottomright'});
+    infoControl.onAdd = function() {
+        const div = L.DomUtil.create('div', 'info-panel');
+        div.innerHTML = `
+            <div class="selected-value-display">
+                <span class="sub-label">Data: <span id="lbl-data-ativa">--</span></span>
+                <span id="txt-hoje">R$ 0,00</span>
+                <span style="font-size:9px; color:#999">DIFERENÇA PROJETADA (6 MESES)</span>
+            </div>
+            <div class="therm-container">
+                <div class="therm-wrapper"><div id="thermo-bar" class="therm-bar"></div></div>
+                <div id="marker-today"></div>
+                <div class="labels-column">
+                    <div class="record-label label-max" id="txt-max">--</div>
+                    <div class="record-label label-min" id="txt-min">--</div>
+                </div>
+            </div>`;
+        return div;
+    };
+    infoControl.addTo(map);
+
+    let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
+    let hexClicadoId = null, dadosAtuais = null;
+
+    function carregarDados(dataStr) {
+        document.getElementById('dataSelector').value = dataStr;
+        const old = document.getElementById('script-dia'); if (old) old.remove();
+        const script = document.createElement('script');
+        script.id = 'script-dia'; 
+        script.src = `dados_diarios/${dataStr}.js`;
+        script.onload = () => {
+            if (typeof dadosDia !== 'undefined') {
+                dadosAtuais = dadosDia;
+                atualizarTermometro(dataStr);
+                atualizarPainelGlobal(dataStr);
+                renderizarMapa();
+            }
+        };
+        document.head.appendChild(script);
+    }
+
+    // Variáveis globais para armazenar os recordes encontrados no histórico
+    let recordePiorProj = -Infinity;
+    let recordeMelhorProj = Infinity;
+    let dataPior = "";
+    let dataMelhor = "";
+
+    function localizarRecordesHistoricos() {
+        const ep = estatisticasPeriodo;
+        if (!ep || !ep.custos_diarios) return;
+
+        const hist = ep.custos_diarios;
+        const datas = Object.keys(hist).sort();
+
+        // Varre o histórico para encontrar os limites reais de diff_global (180 dias)
+        datas.forEach((d, idx) => {
+            if (idx < 180) return;
+
+            // Calcula a projeção para esta data histórica (Futuro - Passado)
+            // Usamos a lógica de 180 dias para definir a escala do termómetro
+            const somaPassada = hist[datas[idx - 180]];
+            const somaAtual = hist[d];
+            
+            // Simulação da projeção (ajuste conforme a lógica do seu script original)
+            const proj = somaAtual - somaPassada;
+
+            if (proj > recordePiorProj) {
+                recordePiorProj = proj;
+                dataPior = d;
+            }
+            if (proj < recordeMelhorProj) {
+                recordeMelhorProj = proj;
+                dataMelhor = d;
+            }
+        });
+        console.log("Limites localizados - Pior:", recordePiorProj, "Melhor:", recordeMelhorProj);
+    }
+
+    function atualizarTermometro(dataAtiva) {
+        if (typeof dadosDia === 'undefined' || !dadosDia.metadata) return;
+
+        // Se os recordes ainda não foram calculados, calcula uma vez
+        if (recordePiorProj === -Infinity) localizarRecordesHistoricos();
+
+        const fmt = (v) => v.toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
+        const fmtD = (s) => s.split('-').reverse().join('/');
+
+        // Valor atual vindo do arquivo do dia (Ex: -16.934.211,56)
+        const projHoje = dadosDia.metadata.diff_global || 0;
+        
+        // ATUALIZAÇÃO DA INTERFACE
+        document.getElementById('lbl-data-ativa').innerText = fmtD(dataAtiva);
+        const elHoje = document.getElementById('txt-hoje');
+        elHoje.innerText = (projHoje > 0 ? "+" : "") + fmt(projHoje);
+        elHoje.style.color = projHoje > 0 ? '#e74c3c' : '#27ae60';
+
+        // LÓGICA DE POSICIONAMENTO
+        // Topo (100%) = recordePiorProj | Base (0%) = recordeMelhorProj
+        const range = recordePiorProj - recordeMelhorProj;
+        let pct = 0;
+        if (range > 0) {
+            pct = ((projHoje - recordeMelhorProj) / range) * 100;
+        }
+        
+        pct = Math.max(0, Math.min(pct, 100));
+
+        document.getElementById('thermo-bar').style.height = pct + "%";
+        document.getElementById('marker-today').style.bottom = pct + "%";
+
+        // LABELS LATERAIS (Localizadas automaticamente)
+        document.getElementById('txt-max').innerHTML = 
+            `<b style="color:#e74c3c">Pior Projeção</b><br>+${fmt(recordePiorProj)}<br><small>(${fmtD(dataPior)})</small>`;
+        
+        document.getElementById('txt-min').innerHTML = 
+            `<b style="color:#27ae60">Melhor Projeção</b><br>${fmt(recordeMelhorProj)}<br><small>(${fmtD(dataMelhor)})</small>`;
+    }
+    function atualizarPainelGlobal(dataStr) {
+        // Agora a div inferior e o termômetro usam EXATAMENTE o mesmo dado do arquivo
+        const meta = dadosAtuais.metadata;
+        const projHoje = meta.diff_global || 0;
+
+        document.getElementById('glob-custo').innerText = (meta.custo_dia || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        
+        const diffEl = document.getElementById('glob-diff');
+        diffEl.innerText = "Diferença Proj.: " + (projHoje > 0 ? "+" : "") + projHoje.toLocaleString('pt-BR', {style:'currency', currency:'BRL', maximumFractionDigits:0});
+        diffEl.style.color = projHoje > 0 ? '#e74c3c' : '#27ae60';
+        
+        // ... restante da lógica do gráfico Global60 ...
+    }
+    // Funções auxiliares mantidas da v12
+    function atualizarPainelGlobal(dataStr) {
+        const meta = dadosAtuais.metadata;
+        document.getElementById('glob-custo').innerText = (meta.custo_dia || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        const diff = document.getElementById('glob-diff');
+        diff.innerText = "Diferença Proj: " + (meta.diff_global || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        diff.style.color = meta.diff_global < 0 ? '#27ae60' : '#e74c3c';
+    }
+
+    function toggleRanking(tipo) {
+        const btn = document.getElementById('btn-' + tipo);
+        if (rankingAtivo === tipo) { rankingAtivo = null; btn.classList.remove('active'); renderizarMapa(); } 
+        else { document.querySelectorAll('.btn-ranking').forEach(b => b.classList.remove('active')); rankingAtivo = tipo; btn.classList.add('active'); processarRanking(tipo); }
+    }
+
+    function renderizarMapa(idsFiltro = null) {
+        if (!geoLayer) geoLayer = L.featureGroup().addTo(map); geoLayer.clearLayers();
+        Object.keys(dadosAtuais.data).forEach(id => {
+            if (!geometriaH3[id]) return;
+            if (idsFiltro && !idsFiltro.includes(id)) return;
+            const d = dadosAtuais.data[id];
+            const diff = d.m["6d"] - d.m["6a"];
+            const cor = diff > 1000 ? '#e74c3c' : (diff < -1000 ? '#2ecc71' : '#f1c40f');
+            L.polygon(geometriaH3[id], { color: (id === hexClicadoId) ? '#000' : '#333', fillColor: cor, fillOpacity: 0.7, weight: (id === hexClicadoId || idsFiltro) ? 4 : 1 }).addTo(geoLayer);
+        });
+    }
+
+    function toggleDashboard() { document.getElementById('dashboard').classList.toggle('minimized'); setTimeout(() => map.invalidateSize(), 410); }
+    function voltarGlobal() { hexClicadoId = null; document.getElementById('global-view').style.display = 'flex'; document.getElementById('individual-view').style.display = 'none'; renderizarMapa(); }
+
+    document.getElementById('dataSelector').onchange = (e) => carregarDados(e.target.value);
+    window.onload = () => carregarDados("2023-06-01");
+</script>
+</body>
+</html>

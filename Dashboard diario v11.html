@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard de Gestão da Segurança Viária | Números / Custo Social</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet@3.0.10/dist/esri-leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet-vector@4.2.3/dist/esri-leaflet-vector.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; font-family: 'Segoe UI', sans-serif; background: #f8f9fa; overflow: hidden; }
+        #header { height: 60px; background: #2c3e50; color: white; display: flex; align-items: center; padding: 0 20px; justify-content: space-between; z-index: 1000; }
+        #map { flex: 1; z-index: 1; background: #ffffff; position: relative; }
+        #dashboard { height: 32%; background: white; border-top: 4px solid #34495e; display: flex; padding: 15px; gap: 15px; box-sizing: border-box; transition: 0.4s; position: relative; }
+        #dashboard.minimized { height: 0px !important; padding: 0; border-top: 0; }
+        #toggle-dashboard { position: absolute; top: -30px; left: 50%; transform: translateX(-50%); background: #34495e; color: white; border: none; padding: 5px 15px; border-radius: 8px 8px 0 0; cursor: pointer; z-index: 2000; }
+        
+        #global-view, #individual-view { display: flex; width: 100%; gap: 15px; }
+        .panel-left { flex: 0.8; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid #eee; padding-right: 15px; }
+        .panel-right { flex: 1.2; min-width: 0; }
+        
+        /* Ajuste no container para permitir expansão total */
+        .chart-container { flex: 1; position: relative; border: 1px solid #dee2e6; border-radius: 8px; padding: 10px; height: 100%; min-width: 0; transition: flex 0.3s ease; }
+        
+        .btn-ranking { background: #f1f3f5; color: #2c3e50; border: 1px solid #ced4da; padding: 8px; margin: 2px 0; border-radius: 4px; cursor: pointer; font-size: 11px; text-align: left; transition: 0.2s; }
+        .btn-ranking.active { background: #e67e22; color: white; border-color: #d35400; font-weight: bold; }
+        
+        .val-destaque { font-size: 24px; font-weight: bold; color: #2c3e50; display: block; margin: 5px 0; }
+        .sub-label { font-size: 10px; color: #7f8c8d; text-transform: uppercase; font-weight: bold; }
+        #filter-container { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; background: white; padding: 10px 20px; border-radius: 30px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 15px; }
+
+        .info-panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 0 15px rgba(0,0,0,0.1); border: 1px solid #ccc; width: 240px; }
+        .selected-value-display { text-align: center; background: #ecf0f1; padding: 8px; border-radius: 5px; margin-bottom: 15px; border-left: 5px solid #27ae60; }
+        #txt-hoje { font-size: 18px; color: #27ae60; font-weight: bold; display: block; }
+        #txt-perc { font-size: 12px; color: #7f8c8d; display: block; margin-top: 2px; }
+        .therm-container { display: flex; align-items: flex-start; position: relative; height: 160px; }
+        .therm-wrapper { height: 150px; width: 22px; background: #eee; border-radius: 15px; position: relative; border: 2px solid #bdc3c7; margin-left: 5px; }
+        .therm-bar { width: 100%; background: linear-gradient(to top, #2ecc71, #27ae60); position: absolute; bottom: 0; border-radius: 10px; transition: height 0.5s ease; }
+        #marker-today { position: absolute; left: 28px; width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-right: 12px solid #2c3e50; transition: bottom 0.5s ease; margin-bottom: -8px; z-index: 10; }
+        .labels-column { position: relative; height: 150px; margin-left: 25px; flex: 1; }
+        .record-label { position: absolute; font-size: 11px; width: 100%; color: #333; }
+        .label-max { top: -5px; border-top: 1px dashed #bdc3c7; padding-top: 2px; }
+        .label-min { bottom: -5px; border-bottom: 1px dashed #bdc3c7; padding-bottom: 2px; }
+        .legend-box { clear: both; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; margin-top: 10px; }
+        .legend-box i { width: 10px; height: 10px; float: left; margin-right: 8px; border-radius: 50%; margin-top: 3px; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div><strong>Dashboard de Gestão da Segurança Viária</strong> | Números / Custo Social</div>
+    <input type="date" id="dataSelector" value="2023-06-01">
+</div>
+
+<div id="map">
+    <div id="filter-container">
+        <span>Filtrar Cidade:</span>
+        <select id="sel-metrica"><option value="m">Custo Social (+6m)</option><option value="v">Total Veículos (+6m)</option></select>
+        <input type="range" id="rng-filtro" min="0" value="0" style="flex:1">
+        <span id="val-filtro">0</span>
+    </div>
+</div>
+
+<div id="dashboard">
+    <button id="toggle-dashboard" onclick="toggleDashboard()">▼ DASHBOARD</button>
+    <div id="global-view">
+        <div class="panel-left">
+            <h3 id="tit-global" style="margin:0;">Análise Global</h3>
+            <div style="margin:10px 0">
+                <span class="sub-label">Custo Social do Dia (Cidade):</span>
+                <span id="glob-custo" class="val-destaque">R$ 0,00</span>
+                <span id="glob-diff" style="font-weight:bold; font-size:12px;">Diferença 6 meses: R$ 0,00</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:4px;">
+                <button id="btn-reducao" class="btn-ranking" onclick="toggleRanking('reducao')">⬇ Top 5 Reduções</button>
+                <button id="btn-aumento" class="btn-ranking" onclick="toggleRanking('aumento')">⬆ Top 5 Aumentos</button>
+                <button id="btn-motoneta" class="btn-ranking" onclick="toggleRanking('motoneta')">🛵 Top 5 Motonetas</button>
+                <button id="btn-moto" class="btn-ranking" onclick="toggleRanking('moto')">🏍 Top 5 Motocicletas</button>
+            </div>
+        </div>
+        <div class="panel-right"><canvas id="chartGlobal60"></canvas></div>
+    </div>
+    <div id="individual-view" style="display:none;">
+        <div id="containerEvol" class="chart-container"><canvas id="chartEvol"></canvas></div>
+        <div id="containerVeic" class="chart-container"><canvas id="chartVeic"></canvas></div>
+        <button onclick="voltarGlobal()" style="position:absolute; right:10px; top:10px; cursor:pointer; background:#eee; border:1px solid #ccc; border-radius:4px; z-index: 10;">Voltar ✖</button>
+    </div>
+</div>
+
+<script src="geometria_h3.js"></script>
+<script src="estatisticas_periodo.js"></script>
+
+<script>
+    const map = L.map('map').setView([-26.9068, -48.6778], 13);
+    L.esri.Vector.vectorTileLayer("7a110ef9198540068341e6908c6bf298", {
+        portalUrl: "https://arcgis.itajai.sc.gov.br/portal",
+        attribution: 'Prefeitura de Itajaí'
+    }).addTo(map);
+
+    const infoControl = L.control({position: 'bottomright'});
+    infoControl.onAdd = function() {
+        const div = L.DomUtil.create('div', 'info-panel');
+        div.innerHTML = `
+            <div class="selected-value-display">
+                <span class="sub-label">Data Selecionada: <span id="lbl-data-ativa">--/--/--</span></span>
+                <span id="txt-hoje">0 verdes</span>
+                <span id="txt-perc">(0% do total)</span>
+            </div>
+            <div class="therm-container">
+                <div class="therm-wrapper"><div id="thermo-bar" class="therm-bar" style="height: 0%"></div></div>
+                <div id="marker-today" style="bottom: 0%"></div>
+                <div class="labels-column">
+                    <div class="record-label label-max"><b>Máximo</b><br><span id="txt-max">0</span></div>
+                    <div class="record-label label-min"><b>Mínimo</b><br><span id="txt-min">0</span></div>
+                </div>
+            </div>
+            <div class="legend-box"><i style="background:#e74c3c"></i> Aumento | <i style="background:#f1c40f"></i> Estável | <i style="background:#2ecc71"></i> Redução</div>`;
+        return div;
+    };
+    infoControl.addTo(map);
+
+    let geoLayer, evolChart, veicChart, chartGlobal, rankingAtivo = null;
+    let hexClicadoId = null;
+    let dadosAtuais = null;
+
+    function toggleDashboard() {
+        document.getElementById('dashboard').classList.toggle('minimized');
+        setTimeout(() => map.invalidateSize(), 410);
+    }
+
+    function carregarDados(dataStr) {
+        document.getElementById('dataSelector').value = dataStr;
+        const old = document.getElementById('script-dia'); if (old) old.remove();
+        const script = document.createElement('script');
+        script.id = 'script-dia'; 
+        script.src = `dados_diarios/${dataStr}.js`;
+        script.onload = () => {
+            if (typeof dadosDia !== 'undefined') {
+                dadosAtuais = dadosDia;
+                voltarGlobal(); 
+                ajustarEscalaFiltro();
+                atualizarPainelGlobal(dataStr);
+                const valorVerdes = (estatisticasPeriodo.historico && estatisticasPeriodo.historico[dataStr]) ? estatisticasPeriodo.historico[dataStr] : 0;
+                atualizarTermometro(valorVerdes, dataStr);
+                renderizarMapa();
+            }
+        };
+        document.head.appendChild(script);
+    }
+
+    function atualizarTermometro(valor, dataAtiva) {
+        const ep = estatisticasPeriodo;
+        if (!ep || !ep.historico) return;
+        const fmtData = (s) => {
+            if (!s) return "";
+            const p = s.split('-');
+            return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(-2)}` : s;
+        };
+        const dataCorte = "2020-06-01";
+        const chavesFiltradas = Object.keys(ep.historico).filter(d => d >= dataCorte);
+        const valoresFiltrados = chavesFiltradas.map(d => ep.historico[d]);
+        const maxVal = valoresFiltrados.length > 0 ? Math.max(...valoresFiltrados) : 0;
+        const minVal = valoresFiltrados.length > 0 ? Math.min(...valoresFiltrados) : 0;
+        const dataMax = chavesFiltradas[valoresFiltrados.indexOf(maxVal)];
+        const dataMin = chavesFiltradas[valoresFiltrados.indexOf(minVal)];
+        document.getElementById('lbl-data-ativa').innerText = fmtData(dataAtiva);
+        const totalHex = dadosAtuais ? Object.keys(dadosAtuais.data).length : 0;
+        const percTotal = totalHex > 0 ? ((valor / totalHex) * 100).toFixed(1) : 0;
+        document.getElementById('txt-perc').innerText = `(${percTotal}% de ${totalHex} hexágonos)`;
+        document.getElementById('txt-hoje').innerText = valor + " verdes";
+        const range = maxVal - minVal;
+        let pct = range > 0 ? ((valor - minVal) / range) * 100 : 0;
+        pct = Math.max(0, Math.min(pct, 100));
+        document.getElementById('thermo-bar').style.height = pct + '%';
+        document.getElementById('marker-today').style.bottom = pct + '%';
+        document.getElementById('txt-max').innerHTML = `${maxVal} <small>(${fmtData(dataMax)})</small>`;
+        document.getElementById('txt-min').innerHTML = `${minVal} <small>(${fmtData(dataMin)})</small>`;
+    }
+
+    function atualizarPainelGlobal(dataStr) {
+        const meta = dadosAtuais.metadata;
+        document.getElementById('tit-global').innerText = `Análise Global: ${dataStr.split('-').reverse().join('/')}`;
+        document.getElementById('glob-custo').innerText = (meta.custo_dia || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        const diff = document.getElementById('glob-diff');
+        diff.innerText = "Diferença Proj: " + (meta.diff_global || 0).toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'});
+        diff.style.color = meta.diff_global < 0 ? '#27ae60' : '#e74c3c';
+        const hist = estatisticasPeriodo.custos_diarios || {};
+        const todasDatas = Object.keys(hist).sort();
+        const idx = todasDatas.indexOf(dataStr);
+        const sliceDatas = todasDatas.slice(Math.max(0, idx - 30), Math.min(todasDatas.length, idx + 30));
+        if(chartGlobal) chartGlobal.destroy();
+        const ctx = document.getElementById('chartGlobal60').getContext('2d');
+        chartGlobal = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sliceDatas.map(d => d.split('-')[2]),
+                datasets: [{ 
+                    label: 'Custo R$', 
+                    data: sliceDatas.map(d => hist[d] || 0),
+                    backgroundColor: sliceDatas.map(d => d === dataStr ? '#e67e22' : '#bdc3c7'),
+                    hoverBackgroundColor: '#34495e'
+                }]
+            },
+            options: { 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } },
+                onClick: (event, elements) => {
+                    if (elements.length > 0) carregarDados(sliceDatas[elements[0].index]);
+                }
+            }
+        });
+    }
+
+    function toggleRanking(tipo) {
+        const btn = document.getElementById('btn-' + tipo);
+        if (rankingAtivo === tipo) {
+            rankingAtivo = null;
+            btn.classList.remove('active');
+            renderizarMapa();
+        } else {
+            document.querySelectorAll('.btn-ranking').forEach(b => b.classList.remove('active'));
+            rankingAtivo = tipo;
+            btn.classList.add('active');
+            processarRanking(tipo);
+        }
+    }
+
+    function processarRanking(tipo) {
+        const lista = [];
+        const hexas = dadosAtuais.data;
+        Object.keys(hexas).forEach(id => {
+            const d = hexas[id];
+            let score = 0;
+            if (tipo === 'reducao') score = d.m["6a"] - d.m["6d"];
+            else if (tipo === 'aumento') score = d.m["6d"] - d.m["6a"];
+            else if (tipo === 'motoneta') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTONETA') ? a + v : a, 0);
+            else if (tipo === 'moto') score = Object.entries(d.vd).reduce((a, [k, v]) => k.toUpperCase().includes('MOTOCICLETA') ? a + v : a, 0);
+            if (score > 0 || tipo.includes('reducao')) lista.push({id, score});
+        });
+        lista.sort((a, b) => b.score - a.score);
+        renderizarMapa(lista.slice(0, 5).map(x => x.id));
+    }
+
+    function renderizarMapa(idsFiltro = null) {
+        if (!geoLayer) geoLayer = L.featureGroup().addTo(map);
+        geoLayer.clearLayers();
+        const m = document.getElementById('sel-metrica').value;
+        const f = parseFloat(document.getElementById('rng-filtro').value);
+        Object.keys(dadosAtuais.data).forEach(id => {
+            if (!geometriaH3[id]) return;
+            if (idsFiltro && !idsFiltro.includes(id)) return;
+            const d = dadosAtuais.data[id];
+            let val = m === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
+            if (!idsFiltro && val < f) return;
+            const diff = d.m["6d"] - d.m["6a"];
+            const cor = diff > 1000 ? '#e74c3c' : (diff < -1000 ? '#2ecc71' : '#f1c40f');
+            L.polygon(geometriaH3[id], {
+                color: (id === hexClicadoId) ? '#000' : '#333',
+                fillColor: cor, 
+                fillOpacity: 0.7, 
+                weight: (id === hexClicadoId || idsFiltro) ? 4 : 1
+            }).addTo(geoLayer).on('click', () => {
+                if (hexClicadoId === id) voltarGlobal();
+                else { hexClicadoId = id; exibirIndividual(d); renderizarMapa(idsFiltro); }
+            });
+        });
+    }
+
+    function exibirIndividual(info) {
+        document.getElementById('global-view').style.display = 'none';
+        document.getElementById('individual-view').style.display = 'flex';
+        
+        // ESCONDE o gráfico de veículos para dar espaço ao gráfico de barras/evolução
+        document.getElementById('containerVeic').style.display = 'none';
+        
+        if(evolChart) evolChart.destroy();
+        evolChart = new Chart(document.getElementById('chartEvol'), {
+            type: 'bar', // Alterado para bar conforme solicitado para o gráfico de barras principal
+            data: { 
+                labels: ['Há 6 meses', 'Há 3 meses', 'Projeção 3 meses', 'Projeção 6 meses'], 
+                datasets: [{ 
+                    label: 'Custo Social (R$)', 
+                    data: [info.m["6a"], info.m["3a"], info.m["3d"], info.m["6d"]], 
+                    backgroundColor: ['#bdc3c7', '#95a5a6', '#3498db', '#2c3e50'] 
+                }] 
+            },
+            options: { 
+                maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: 'Evolução e Projeção de Custo Social no Hexágono' }
+                }
+            }
+        });
+    }
+
+    function voltarGlobal() {
+        hexClicadoId = null;
+        document.getElementById('global-view').style.display = 'flex';
+        document.getElementById('individual-view').style.display = 'none';
+        
+        // MOSTRA novamente o container de veículos para quando a tela for usada em outros contextos
+        document.getElementById('containerVeic').style.display = 'block';
+        
+        renderizarMapa(); 
+    }
+
+    function ajustarEscalaFiltro() {
+        let max = 0; const m = document.getElementById('sel-metrica').value;
+        Object.values(dadosAtuais.data).forEach(d => {
+            let v = m === 'm' ? d.m["6d"] : Object.values(d.vd).reduce((a, b) => a + b, 0);
+            if (v > max) max = v;
+        });
+        document.getElementById('rng-filtro').max = max;
+    }
+
+    document.getElementById('rng-filtro').oninput = (e) => {
+        document.getElementById('val-filtro').innerText = Math.round(e.target.value).toLocaleString();
+        renderizarMapa();
+    };
+    document.getElementById('dataSelector').onchange = (e) => carregarDados(e.target.value);
+    window.onload = () => carregarDados("2023-01-01");
+</script>
+</body>
+</html>
